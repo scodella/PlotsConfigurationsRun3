@@ -11,7 +11,7 @@ To install, try this
     ./install.sh 
 
     bash
-    ./start.sh
+    source start.sh
 
 
 
