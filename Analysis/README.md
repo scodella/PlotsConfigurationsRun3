@@ -2,11 +2,11 @@
 
 At installation, do this:
 
-    mkdir WorkAreaRDF
-    cd WorkAreaRDF
+    mkdir BTagPerfRDF
+    cd BTagPerfRDF
 
     git clone --branch 13.6TeV https://github.com/scodella/setup LatinosSetup
-    ./LatinosSetup/SetupRDFAnalysis.sh [new]RPLME_ANALYSIS [keep][BASE]
+    ./LatinosSetup/SetupRDFAnalysis.sh BTagPerf
 
     cd mkShapesRDF
     ./install.sh 
@@ -18,7 +18,7 @@ At installation, do this:
 
 If already installed, just do:
 
-    cd WorkAreaRDF/mkShapesRDF
+    cd BTagPerfRDF/mkShapesRDF
     bash
     source start.sh
     cd ../PlotsConfigurationsRun3/Analysis
