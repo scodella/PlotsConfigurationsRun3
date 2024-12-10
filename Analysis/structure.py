@@ -1,6 +1,6 @@
 # structure configuration for datacard
 
-#structure = {}
+structure = {}
 
 # keys here must match keys in samples.py   
 
