@@ -59,14 +59,33 @@ def combineDatacards(opt, signal, dryRun=False):
     combineDatacardScriptList = commonTools.setupCombineCommand(opt)
     combineDatacardScriptList.append('cd '+signalOutputDir)
     combineDatacardScriptList.append('combineCards.py '+' '.join(getDatacardList(opt, signal))+' > combinedDatacard.txt')
-
     combineDatacardCommandList.extend(commonTools.buildExternalScript(combineDatacardScript, combineDatacardScriptList, 'list'))
-    combineDatacardCommandList.extend([ 'env -i '+commonTools.getAbsPath(combineDatacardScript)])#, 'rm '+combineDatacardScript ])
+
+    combineDatacardCommandList.append('env -i '+commonTools.getAbsPath(combineDatacardScript))
+    combineDatacardCommandList.extend([ 'cd '+signalOutputDir, 'rm combineDatacards.sh' ])
 
     combineDatacardCommand = '\n'.join(combineDatacardCommandList)
 
     if dryRun: return combineDatacardCommand
     else: os.system(combineDatacardCommand)
+
+def buildCombineScript(opt, signal, dryRun=False):
+
+    signalOutputDir = commonTools.getSignalDir(opt, opt.year, opt.tag, signal, 'combineOutDir')
+
+    combineScript = signalOutputDir+'/combineScript.sh'
+    combineScriptList = commonTools.setupCombineCommand(opt)
+    combineScriptList.append('cd '+signalOutputDir)
+    combineScriptList.append(opt.combineCommand.replace('YEAR', opt.year).replace('TAG',opt.tag))
+    combineCommandList = commonTools.buildExternalScript(combineScript, combineScriptList, 'list')
+
+    combineCommandList.append('env -i '+commonTools.getAbsPath(combineScript))
+    combineCommandList.append('rm combineScript.sh')
+
+    combineCommand = '\n'.join(combineCommandList)
+
+    if dryRun: return combineCommand
+    else: os.system(combineCommand)
 
 def runCombine(opt):
 
@@ -96,7 +115,6 @@ def runCombine(opt):
 
     optAux = copy.deepcopy(opt)
 
-    optAux.baseDir = os.getenv('PWD')
     optAux.cardsdir = commonTools.mergeDirPaths(optAux.baseDir, optAux.cardsdir)
     optAux.shapedir = commonTools.mergeDirPaths(optAux.baseDir, optAux.shapedir)
 
@@ -120,15 +138,10 @@ def runCombine(opt):
             if makeDatacards:  combineCommandList.append(prepareDatacards(optAux, 'SIGNAL', True))
             combineCommandList.append(combineDatacards(optAux, 'SIGNAL', True))
             if runCombineJob: 
-                combineCommandList.append(opt.combineCommand)
-                if opt.combineAction=='impacts':
-                   impactPlotDir = '/'.join([ optAux.baseDir, opt.plotsdir, year, 'Impacts' ])
-                   os.system('mkdir -p '+impactPlotDir)
-                   combineCommandList.append('mv impacts.pdf '+impactPlotDir+'/'+outtag+'_SIGNAL.pdf')
-                if cleanDatacards: 
-                    combineCommandList.append('rm combinedDatacard.txt')
-                if makeDatacards:
-                    for period in year.split('-'): combineCommandList.append(commonTools.deleteDirectory(period))
+                combineCommandList.append(buildCombineScript(optAux, 'SIGNAL', True))
+                if cleanDatacards: combineCommandList.append('rm combinedDatacard.txt')
+            if makeDatacards:
+                for period in year.split('-'): combineCommandList.append(commonTools.deleteDirectory(period, opt.force, True))
             combineCommandList.append( 'cd '+optAux.baseDir )
             if cleanDatacards: combineCommandList.append(commonTools.cleanSignalDatacards(optAux, year, outtag, 'SIGNAL', True))
 
@@ -157,7 +170,7 @@ def runCombine(opt):
                 else:
                     if outtag.split('__')[0] not in combineJobs:
                         combineJobs[outtag.split('__')[0]] = {}
-                    combineJobs[outtag.split('__')[0]][sample+outtag.replace(outtag.split('__')[0],'')] = signalCombineCommand
+                    combineJobs[outtag.split('__')[0]][signal+outtag.replace(outtag.split('__')[0],'')] = signalCombineCommand
 
         if not opt.debug and not opt.interactive:
             if len(list(combineJobs.keys()))>0: 
@@ -255,7 +268,8 @@ def impactsPlots(opt):
     stepList.append('combineTool.py -M Impacts -d combinedDatacard.root -m 125 --doInitialFit '+fitOptions)
     stepList.append('combineTool.py -M Impacts -d combinedDatacard.root -m 125 --doFits --parallel 100 '+fitOptions)
     stepList.append('combineTool.py -M Impacts -d combinedDatacard.root -m 125 -o impacts.json '+fitOptions)
-    stepList.append('plotImpacts.py -i impacts.json -o impacts')
+    stepList.append('mkdir -p '+'/'.join([ opt.baseDir, opt.plotsdir, 'YEAR', 'Impacts' ]))
+    stepList.append('plotImpacts.py -i impacts.json -o '+impactPlotDir+'/TAG_SIGNAL')
     opt.combineCommand = ' ; '.join(stepList)
     opt.combineOutDir = opt.impactdir
 

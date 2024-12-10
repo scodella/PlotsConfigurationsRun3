@@ -368,18 +368,19 @@ def plots(opt):
 
 ### Datacards
 
-def datacards(opt, signal='', combineOutDir='datacards', dryRun=False):
+def datacards(opt, signal='', combineOutDir='cardsdir', dryRun=False):
 
     fileset = commonTools.getFileset(opt.fileset, opt.sigset)
 
     if signal!='': signalList = [ signal ]
-    else: commonTools.getSignalList(opt)
+    else: signalList = commonTools.getSignalList(opt)
 
-    datacardCommandList = []
+    datacardsCommandList = []
 
     blindData = '' if opt.unblind else ' --blindData '
 
-    pwd = opt.baseDir = os.getenv('PWD')
+    opt.cardsdir = commonTools.mergeDirPaths(opt.baseDir, opt.cardsdir)
+    opt.shapedir = commonTools.mergeDirPaths(opt.baseDir, opt.shapedir)
 
     for signal in signalList:
 
@@ -389,23 +390,23 @@ def datacards(opt, signal='', combineOutDir='datacards', dryRun=False):
         for year in opt.year.split('-'):
 
             datacardsWorkDir = '/'.join([ signalWorkDir, year ])
- 
-            if dryRun:
-                datacardCommandList.append('cd '+datacardsWorkDir)
+            outputDir = commonTools.getSignalDir(opt, year, opt.tag, signal, 'cardsdir')
+            datacardCommandList = [ 'cd '+datacardsWorkDir ]
+            datacardCommandList.append('pwd; echo '+outputDir+';mkdir -p '+outputDir)
+            datacardCommandList.append('mkDatacards --outputDirDatacard='+outputDir)
+            datacardCommandList.append('cd '+opt.baseDir)
+
+            if dryRun: 
+                datacardsCommandList.extend(datacardCommandList) 
+
             else:
-                datacardsConfigsDir = '/'.join([ datacardsWorkDir, 'configs' ])
+                datacardsConfigsDir = '/'.join([ datacardsWorkDir, 'configs' ]) 
                 os.system('mkdir -p '+datacardsConfigsDir)
                 configFile = commonTools.compileConfigurations(opt, 'datacards', year, opt.tag, sigset, fileset, configsFolder=datacardsConfigsDir)
+                os.system('\n'.join(datacardCommandList))
+                commonTools.deleteDirectory(datacardsWorkDir, opt.force)
 
-            outputDir = commonTools.getSignalDir(opt, year, opt.tag, signal, 'cardsdir')
-
-            datacardCommand = 'mkdir -p '+outputDir+' \n mkDatacards --outputDirDatacard='+outputDir
-
-            if dryRun: datacardCommandList.append(datacardCommand) 
-            else: os.system(';'.join([ datacardCommand, commonTools.deleteDirectory(datacardsConfigsDir) ]))
-
-    if dryRun: return datacardCommandList+['cd '+pwd]
-    else: os.system('cd '+pwd)
+    if dryRun: return datacardsCommandList
 
 ### Batch
 

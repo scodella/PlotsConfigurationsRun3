@@ -304,9 +304,13 @@ def getPerSignalSigset(fileset, sigset, signal):
 
 def getSignalDir(opt, year, tag, signal, directory=''):
 
+    if directory=='' and not hasattr(opt, 'combineOutDir'):
+        print('Error in getSignalDir: neither "directory" nor "combineOutDir" are defined')
+        exit()
+
     if directory=='': directory = 'combineOutDir'
 
-    if hasattr(opt, 'combineOutDir') and opt.combineOutDir.split('/')[-1]==opt.cardsdir.split('/')[-1]:
+    if getattr(opt, directory).split('/')[-1]==opt.cardsdir.split('/')[-1]:
         signalDirList = [ getattr(opt, directory), tag, year ]
         if opt.sigset!='' and opt.sigset!='SM': signalDirList.insert(2, signal)
 
@@ -587,7 +591,7 @@ def systematicsTables(opt):
 
 def setupCombineCommand(opt, joinstr=''):
 
-    combineCommandList = [ 'cd '+opt.combineLocation, 'eval `scramv1 runtime -sh`', 'cd '+opt.baseDir ]
+    combineCommandList = [ 'cd '+opt.combineLocation, 'eval \`scramv1 runtime -sh\`', 'cd '+opt.baseDir ]
     if joinstr=='': return combineCommandList
     else: return joinstr.join(combineCommandList)
 
