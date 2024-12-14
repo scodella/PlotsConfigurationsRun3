@@ -932,9 +932,9 @@ def bTagPerfAnalysis(opt, action):
             for selection in splitSelections:
                 sel = 'Central' if selection=='' else selection
 
-                tagOptionList = [ opt.tag.split('_')[0], '_btag'+btagWP ]
-                if ptbin=='all': tagOptionList.append('_mergedJetPtBins')
-                else: tagOptionList.append('_Jet'+ptbin)
+                tagOptionList = [ opt.tag.split('___')[0], '_btag'+btagWP ]
+                if ptbin=='all': tagOptionList.append('__mergedJetPtBins')
+                else: tagOptionList.append('__Jet'+ptbin)
                 if sel=='all': tagOptionList.append(mergedSelectionFlag)
                 else: tagOptionList.append('_sel'+sel)
 

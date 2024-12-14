@@ -2,6 +2,7 @@ import os
 import glob
 import copy
 import ROOT
+import re, sys
 import subprocess
 import json
 import math
@@ -35,6 +36,11 @@ def hasString(filename, string):
     with open(filename) as myfile:
         if string in myfile.read(): return True
     return False
+
+def makeExecutable(filename, dryRun=False):
+
+    if dryRun: return 'chmod a+x '+filename
+    else: os.system('chmod a+x '+filename)
 
 def compile(opt):
   
@@ -273,7 +279,7 @@ def setOptYearTagSigset(opt, year='', tag='', sigset=''):
 
 def getFileset(fileset, sigset):
 
-    if fileset=='': fileset = sigset
+    if fileset=='': return sigset
     while(fileset[0]=='_'): fileset = fileset[1:]
     return fileset
 
@@ -302,6 +308,27 @@ def getPerSignalSigset(fileset, sigset, signal):
     elif sigset=='' or sigset=='SM': return sigset # This should work for SM searches
     else: return signal                            # Guessing latinos' usage
 
+def isSM(sigset):
+
+    return sigset=='' or sigset=='SM'
+
+def getSignalNameForSignalDir(sigset, signal):
+
+    return '' if isSM(sigset) else signal
+
+def getTagOutputDir(tag):
+
+    return '/'.join([ x if x[0]!='_' else x[1:] for x in tag.split('__') if x!='' ])
+
+def getTagStructureForCombine(tag, signal, siget):
+
+    coreTag, subTagList = tag.split('___')[0].replace('__','/'), [ '' ]
+    if len(tag.split('___'))>1:
+        if tag.split('___')[1][0]!='_':
+            subTagList[0] = tag.split('___')[1].split('____')[0].replace('__','/')
+    subTagList.append(getSignalNameForSignalDir(sigset, signal))
+    return coreTag, '/'.join([ x for x in subTagList if x!='' ])
+
 def getSignalDir(opt, year, tag, signal, directory=''):
 
     if directory=='' and not hasattr(opt, 'combineOutDir'):
@@ -310,18 +337,12 @@ def getSignalDir(opt, year, tag, signal, directory=''):
 
     if directory=='': directory = 'combineOutDir'
 
-    if getattr(opt, directory).split('/')[-1]==opt.cardsdir.split('/')[-1]:
-        signalDirList = [ getattr(opt, directory), tag, year ]
-        if opt.sigset!='' and opt.sigset!='SM': signalDirList.insert(2, signal)
-
+    if 'validate' in opt.option.lower(): 
+        signalDirList = [ getattr(opt, directory), tag, getSignalNameForSignalDir(opt.sigset, signal), year ]
     else:
-        signalDirList = [ getattr(opt, directory), year ]
-        tag = tag.replace('___','_')
-        if '__' in tag: signalDirList.append(tag.replace('__','/'))
-        else: signalDirList.append(tag) 
-        if opt.sigset!='' and opt.sigset!='SM': signalDirList.append(signal)
+        signalDirList = [ getattr(opt, directory), year, getTagOutputDir(tag), getSignalNameForSignalDir(opt.sigset, signal) ]
 
-    return '/'.join(signalDirList)
+    return '/'.join([ x for x in signalDirList if x!='' ])
 
 def isExotics(opt):
 
@@ -366,7 +387,7 @@ def buildExternalScript(outputFile, externalScriptCommandList, output):
     for command in externalScriptCommandList:
         scriptCommandList.append('echo "'+command+'" >> '+outputFile)
 
-    scriptCommandList.append('chmod a+x '+outputFile)
+    scriptCommandList.append(makeExecutable(outputFile, True))
 
     if output=='list': return scriptCommandList
     elif output=='string': return '\n'.join(scriptCommandList)
@@ -374,7 +395,7 @@ def buildExternalScript(outputFile, externalScriptCommandList, output):
 
 ### Tools to check or clean configs, logs, shapes, plots, datacards and jobs
 
-def deleteDirectory(directory, force, dryRun=False):
+def deleteDirectory(directory, force=False, dryRun=False):
 
     if '/*/' in directory or directory[len(directory)-2:]=='/*':
         if not force:
@@ -509,6 +530,109 @@ def checkProxy(opt):
         print('WARNING: Your proxy is only valid for ',str(timeLeft),' hours -> Renew it with:')
         print('voms-proxy-init -voms cms -rfc --valid 168:0')
         exit()
+
+### Batch
+
+def submitJobs(opt, jobName, jobTag, jobList, requestCpus=1):
+
+    from mkShapesRDF.shapeAnalysis.BatchSubmission import BatchSubmission
+
+    hostName = os.uname()[1]
+    opt.batchQueue = batchQueue(opt, opt.batchQueue)
+    batchFolder = getAbsPath('/'.join([ opt.batchFolder, jobName, jobTag ]))
+
+    if 'cern' not in hostName:
+        print('Job submission not yet supported outside lxplus')
+        exit()
+
+    jobRunning = []
+
+    for job in jobList: 
+
+        jobDir = '/'.join([ batchFolder, job ])
+        jobFileName = '/'.join([ jobDir, job ])
+        errFile=jobFileName+'.err'
+        outFile=jobFileName+'.out'
+        jidFile=jobFileName+'.jid'
+
+        if isGoodFile(jidFile, 0.):
+            if opt.force: os.system('cat '+jidFile+' | condor_rm `xargs`')
+            else:
+                print ('Job '+job+' for tag '+jobTag+' already running')
+                jobRunning.append(job)
+                continue
+
+        deleteDirectory(jobDir)
+        os.system('mkdir -p '+jobDir)
+
+        jobFile= open(jobFileName+'.sh','w')
+        with open(os.environ["STARTPATH"]) as startFile: 
+            jobFile.write(startFile.read())
+        jobFile.write(jobList[job]+'\n')
+        jobFile.write('[ $? -eq 0 ] && mv '+jidFile+' '+jidFile.replace('.jid','.done') )
+        jobFile.close()
+        makeExecutable(jobFileName+'.sh')
+
+        print('Submit',jobTag,job,'on',opt.batchQueue)
+        
+        if 'cern' in hostName:
+          jdsFile = open(jobFileName+'.jds','w')
+          jdsFile.write('executable = '+jobFileName+'.sh\n')
+          jdsFile.write('universe = vanilla\n')
+          jdsFile.write('output = '+jobFileName+'.out\n')
+          jdsFile.write('error = '+jobFileName+'.err\n')
+          jdsFile.write('log = '+jobFileName+'.log\n')
+          jdsFile.write('request_cpus = '+str(requestCpus)+'\n')
+          jdsFile.write('+JobFlavour = "'+opt.batchQueue+'"\n')
+          jdsFile.write('queue\n')
+          jdsFile.close()
+
+    if opt.dryRun: return
+    if len(jobRunning)==len(list(jobList.keys())):
+        print('All jobs already running for tag '+jobTag)
+        return
+
+    if 'cern' in hostName:
+        jds = 'executable = '+batchFolder+'/$(JName).sh\n' 
+        jds += 'universe = vanilla\n' 
+        jds += 'output = '+batchFolder+'/$(JName).out\n'
+        jds += 'error = '+batchFolder+'/$(JName).err\n'
+        jds += 'log = '+batchFolder+'/$(JName).log\n'  
+        jds += 'request_cpus = '+str(requestCpus)+'\n' 
+        jds += '+JobFlavour = "'+opt.batchQueue+'"\n'
+        jds += 'queue JName in (\n'
+        for job in jobList:
+            if job not in jobRunning:
+                jds += '/'.join([ job, job ]) + '\n'
+        jds += ')\n'
+        proc = subprocess.Popen(['condor_submit'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        out, err = proc.communicate(jds.encode('utf-8'))
+        if proc.returncode != 0:
+          sys.stderr.write(err.decode())
+          raise RuntimeError('Job submission failed.')
+        print(out.strip().decode())
+
+        matches = re.match('.*submitted to cluster ([0-9]*)\.'.encode('utf-8'), out.decode().split('\n')[-2].encode('utf-8'))
+        if not matches:
+          sys.stderr.write('Failed to retrieve the job id. Job submission may have failed.\n')
+          for job in jobList:
+            jidFile='/'.join([ batchFolder, job, job+'.jid' ])
+            open(jidFile, 'w').close()
+        else:
+          clusterId = matches.group(1)
+          proc = subprocess.Popen(['condor_q', clusterId, '-l', '-attr', 'ProcId,Cmd', '-json'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+          out, err = proc.communicate()
+          try:
+            qlist = json.loads(out.strip())
+          except:
+            sys.stderr.write('Failed to retrieve job info. Job submission may have failed.\n')
+            for job in jobList:
+               jidFile='/'.join([ batchFolder, job, job+'.jid' ])
+               open(jidFile, 'w').close()
+          else:
+            for qdict in qlist:
+              with open(qdict['Cmd'].replace('.sh', '.jid'), 'w') as out:
+                out.write('%s.%d\n' % (clusterId.decode(), qdict['ProcId']))
 
 ### Methods for analyzing shapes 
 

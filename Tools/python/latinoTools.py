@@ -63,7 +63,7 @@ def mkPlot(opt, year, tag, sigset, fitoption='', yearInFit='', extraOutDirFlag='
     if fitoption=='':
         fileset = opt.fileset
         sample = '' if (sigset=='SM' or sigset=='') else sigset.split(':')[-1]+extraOutDirFlag
-        plotsDirList.extend([ tag.split('___')[0].replace('__','/'), sample ])
+        plotsDirList.extend([ commonTools.getTagOutputDir(tag), sample ])
         lumiYear = year
 
     else:
@@ -75,7 +75,7 @@ def mkPlot(opt, year, tag, sigset, fitoption='', yearInFit='', extraOutDirFlag='
             signal = sigset
             for ismp in range(len(sigset.split('_')[0].split('-'))-1):
                 signal = signal.replace(sigset.split('_')[0].split('-')[ismp]+'-','')
-        plotsDirList.extend([ tag.split('___')[0].replace('__','/'), fitoption, signal, yearInFit ])
+        plotsDirList.extend([ commonTools.getTagOutputDir(tag), fitoption, signal, yearInFit ])
 
     plotsDir = '/'.join(plotsDirList)
     commonTools.copyIndexForPlots(plotsDir)
@@ -238,7 +238,7 @@ def mkPostFitPlot(opt, fitoption, fittedYear, year, tag, cut, variable, signal, 
 
     os.system('mkPostFitPlot.py '+' '.join(postFitPlotCommandList))
 
-def mergePostFitShapes(opt, postFitShapeFile, signal, mlfitDir, cardsDir, year, cut, variable, datacardNameStructure):
+def mergePostFitShapes(opt, postFitShapeFile, signal, mlfitDir, cardsDir, year, cut, variable, datacardNameStructure): # TODO port to RDF
 
     combinedataset = '_asimovS' if 'asimovs' in opt.option.lower() else '_asimovB' if 'asimovb' in opt.option.lower() else ''
     fitdirectory = 'fit_b' if 'postfitb' in opt.option.lower() else 'fit_s'
@@ -392,7 +392,7 @@ def datacards(opt, signal='', combineOutDir='cardsdir', dryRun=False):
             datacardsWorkDir = '/'.join([ signalWorkDir, year ])
             outputDir = commonTools.getSignalDir(opt, year, opt.tag, signal, 'cardsdir')
             datacardCommandList = [ 'cd '+datacardsWorkDir ]
-            datacardCommandList.append('pwd; echo '+outputDir+';mkdir -p '+outputDir)
+            datacardCommandList.append('mkdir -p '+outputDir)
             datacardCommandList.append('mkDatacards --outputDirDatacard='+outputDir)
             datacardCommandList.append('cd '+opt.baseDir)
 
@@ -408,18 +408,4 @@ def datacards(opt, signal='', combineOutDir='cardsdir', dryRun=False):
 
     if dryRun: return datacardsCommandList
 
-### Batch
-
-def submitJobs(opt, jobName, jobTag, targetList, splitBatch, jobSplit, nThreads):
-
-    opt.batchQueue = commonTools.batchQueue(opt, opt.batchQueue)
-
-    jobs = batchJobs(jobName,jobTag,['ALL'],list(targetList.keys()),splitBatch,'',JOB_DIR_SPLIT_READY=jobSplit)
-    jobs.nThreads = nThreads
-
-    for signal in targetList:
-        jobs.Add('ALL', signal, targetList[signal])
-
-    if not opt.dryRun:
-        jobs.Sub(opt.batchQueue,opt.IiheWallTime,True)
 

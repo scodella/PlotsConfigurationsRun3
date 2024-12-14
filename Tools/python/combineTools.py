@@ -3,13 +3,16 @@ import copy
 import commonTools
 import latinoTools
 
-def submitCombineJobs(opt, jobName, jobTag, combineJobs):
+def submitCombineJobs(opt, year, combineJobs):
 
-    nThreads = 1
-    splitBatch =  'Targets'
-    jobSplit = True if opt.sigset!='' and opt.sigset!='SM' else False
-    
-    latinoTools.submitJobs(opt, jobName, jobTag, combineJobs, splitBatch, jobSplit, nThreads)
+    for coreTag in  combineJobs:
+        if len(list(combineJobs[coreTag].keys()))==0:
+            print('Nothing left to submit for year '+year+', tag '+coreTag)
+            continue
+        combineJobsForTag = {}
+        for signalSubTag in combineJobs[coreTag]:
+            combineJobsForTag[signalSubTag] = combineJobs[coreTag][signalSubTag]
+        commonTools.submitJobs(opt, opt.combineAction, year+'/'+coreTag, combineJobsForTag)
 
 def getLimitRun(unblind):
 
@@ -52,17 +55,16 @@ def getDatacardList(opt, signal):
 
 def combineDatacards(opt, signal, dryRun=False):
 
-    signalOutputDir = commonTools.getSignalDir(opt, opt.year, opt.tag, signal, 'combineOutDir')
-    combineDatacardCommandList = [ 'mkdir -p '+signalOutputDir ]
+    combineDatacardCommandList = [ 'mkdir -p '+opt.signalOutputDir ]
 
-    combineDatacardScript = signalOutputDir+'/combineDatacards.sh'
+    combineDatacardScript = opt.signalOutputDir+'/combineDatacards.sh'
     combineDatacardScriptList = commonTools.setupCombineCommand(opt)
-    combineDatacardScriptList.append('cd '+signalOutputDir)
+    combineDatacardScriptList.append('cd '+opt.signalOutputDir)
     combineDatacardScriptList.append('combineCards.py '+' '.join(getDatacardList(opt, signal))+' > combinedDatacard.txt')
     combineDatacardCommandList.extend(commonTools.buildExternalScript(combineDatacardScript, combineDatacardScriptList, 'list'))
 
     combineDatacardCommandList.append('env -i '+commonTools.getAbsPath(combineDatacardScript))
-    combineDatacardCommandList.extend([ 'cd '+signalOutputDir, 'rm combineDatacards.sh' ])
+    combineDatacardCommandList.extend([ 'cd '+opt.signalOutputDir, 'rm combineDatacards.sh' ])
 
     combineDatacardCommand = '\n'.join(combineDatacardCommandList)
 
@@ -71,11 +73,9 @@ def combineDatacards(opt, signal, dryRun=False):
 
 def buildCombineScript(opt, signal, dryRun=False):
 
-    signalOutputDir = commonTools.getSignalDir(opt, opt.year, opt.tag, signal, 'combineOutDir')
-
-    combineScript = signalOutputDir+'/combineScript.sh'
+    combineScript = opt.signalOutputDir+'/combineScript.sh'
     combineScriptList = commonTools.setupCombineCommand(opt)
-    combineScriptList.append('cd '+signalOutputDir)
+    combineScriptList.append('cd '+opt.signalOutputDir)
     combineScriptList.append(opt.combineCommand.replace('YEAR', opt.year).replace('TAG',opt.tag))
     combineCommandList = commonTools.buildExternalScript(combineScript, combineScriptList, 'list')
 
@@ -91,7 +91,7 @@ def runCombine(opt):
 
     if not commonTools.foundShapeFiles(opt, True): exit()
 
-    if not opt.interactive and opt.action!='writeDatacards':
+    if not opt.interactive and opt.action!='writeDatacards' and not opt.dryRun:
         commonTools.checkProxy(opt)
 
     if not hasattr(opt, 'combineAction'):
@@ -129,10 +129,12 @@ def runCombine(opt):
             outtag = commonTools.getTagForDatacards(tag, opt.sigset)+commonTools.getCombineOptionFlag(opt.option)
             optAux.year, optAux.tag = year, outtag
 
-            if not opt.interactive: 
+            if not opt.interactive:
+                coreTag, subTag = commonTools.getTagStructureForCombine(optAux.tag, 'SIGNAL', optAux.sigset)
+                if coreTag not in combineJobs: combineJobs[coreTag] = {}
                 commonTools.cleanLogs(optAux, optAux.combineAction)
 
-            optAux.combineTagDir = commonTools.mergeDirPaths(optAux.baseDir, commonTools.getSignalDir(optAux, year, outtag, '', 'combineOutDir'))
+            optAux.signalOutputDir = commonTools.getSignalDir(opt, optAux.year, optAux.tag, 'SIGNAL', 'combineOutDir')
 
             combineCommandList = [ ]
             if makeDatacards:  combineCommandList.append(prepareDatacards(optAux, 'SIGNAL', True))
@@ -168,30 +170,12 @@ def runCombine(opt):
                 if opt.debug: print(signalCombineCommand)
                 elif opt.interactive: os.system(signalCombineCommand)
                 else:
-                    if outtag.split('__')[0] not in combineJobs:
-                        combineJobs[outtag.split('__')[0]] = {}
-                    combineJobs[outtag.split('__')[0]][signal+outtag.replace(outtag.split('__')[0],'')] = signalCombineCommand
+                    signalSubTag = subTag.replace('SIGNAL', signal)
+                    if signalSubTag not in combineJobs[coreTag]:
+                        combineJobs[coreTag][signalSubTag] = signalCombineCommand
+                    combineJobs[coreTag][signalSubTag] += '\n'+signalCombineCommand
 
-        if not opt.debug and not opt.interactive:
-            if len(list(combineJobs.keys()))>0: 
-                for tag in  combineJobs:
-                    if len(list(combineJobs[tag].keys()))>0:
-                        combineJobsForTag = {}
-                        subJobsList = {}
-                        for tagSample in combineJobs[tag]:
-                            subTag = tagSample.split('____')[0]
-                            if subTag not in combineJobsForTag: 
-                                combineJobsForTag[subTag] = combineJobs[tag][tagSample] 
-                                subJobsList[subTag] = tagSample.replace(subTag+'____','')
-                            else: 
-                                combineJobsForTag[subTag] += '\n'+combineJobs[tag][tagSample]
-                                subJobsList[subTag] += '-'+tagSample.replace(subTag+'____','')
-                        #for subTag in combineJobsForTag.keys(): combineJobsForTag[subTag+'____'+subJobsList[subTag]] = combineJobsForTag.pop(subTag)
-                        submitCombineJobs(opt, opt.combineAction, year+tag, combineJobsForTag)
-                    else:
-                        print('Nothing left to submit for tag', tag, 'in year', year)
-            else:
-                print('Nothing left to submit for tag list', opt.tag, 'in year', year)
+        if not opt.debug and not opt.interactive: submitCombineJobs(opt, year, combineJobs)
 
 def writeDatacards(opt):
 
@@ -252,7 +236,7 @@ def mlfits(opt):
     opt.combineAction = 'mlfits'
     if 'nodms' not in opt.option.lower(): opt.option += 'usedms'
     fitOptions = getFitOptions(opt.option.lower())
-    opt.combineCommand = ' '.join(['combine -M FitDiagnostics', fitOptions, 'combinedDatacard.txt' ])
+    opt.combineCommand = ' '.join(['combine -M FitDiagnostics', fitOptions, '-n \'\'', 'combinedDatacard.txt' ])
     opt.combineOutDir = opt.mlfitdir
 
     runCombine(opt)
@@ -262,7 +246,7 @@ def impactsPlots(opt):
     opt.combineAction = 'impacts'
     opt.option += 'noshapes'
     if 'noautob' not in opt.option.lower(): opt.option += 'useautob'
-    if 'norobust' not in opt.option.lower(): opt.option += 'dorobust'
+    if 'norobust' not in opt.option.lower(): opt.option += 'dorobfit'
     fitOptions = getFitOptions(opt.option.lower())
     stepList = [ 'text2workspace.py combinedDatacard.txt']
     stepList.append('combineTool.py -M Impacts -d combinedDatacard.root -m 125 --doInitialFit '+fitOptions)
