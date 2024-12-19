@@ -125,7 +125,7 @@ def mergeLightShapes(opt): # TODO port to Run3 if needed
         inputFile.Close()
         outputFile.Close()
 
-def shapesForFit(opt):
+def shapesForFit(opt): # TODO adapt to Run3 shapes
 
     if 'PtRel' in opt.tag: ptRelInput(opt)
     else: system8Input(opt) 
@@ -1755,7 +1755,7 @@ def triggerPrescalesJSON(opt):
     with open(triggerPrescalesFilesDir + '_'.join([ 'Prescales', opt.campaignRunPeriod['period'], 'HLT_JetHT' ])+'.json', 'w') as outfile:
         json.dump(jetHTTriggerPrescales, outfile)
 
-def kinematicWeights(opt):
+def kinematicWeights(opt): # TODO adapt to Run3 shapes
 
     if 'jetpteta' in opt.option.lower():
         print('kinematicWeights in 2D not supported yet')
