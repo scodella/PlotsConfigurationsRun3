@@ -7,7 +7,6 @@ import subprocess
 import json
 import math
 from array import array
-#import LatinoAnalysis.ShapeAnalysis.tdrStyle as tdrStyle
 
 ### General utilities
 
@@ -393,7 +392,7 @@ def buildExternalScript(outputFile, externalScriptCommandList, output):
     elif output=='string': return '\n'.join(scriptCommandList)
     elif output=='write': os.system('\n'.join(scriptCommandList))
 
-### Tools to check or clean configs, logs, shapes, plots, datacards and jobs
+### Tools to check or clean configs, logs, shapes, plots, datacards
 
 def deleteDirectory(directory, force=False, dryRun=False):
 
@@ -489,7 +488,7 @@ def copyIndexForPlots(plotDir, mainPlotDir='.'):
 
     copyFileToFolders('../index.php', plotDir, mainPlotDir)
 
-# jobs
+### Batch
 
 def showQueue(opt):
 
@@ -531,7 +530,30 @@ def checkProxy(opt):
         print('voms-proxy-init -voms cms -rfc --valid 168:0')
         exit()
 
-### Batch
+def jobStatus(jobFileName):
+
+    if not isGoodFile(jobFileName+'.sh', 0.): return 'new'
+    elif isGoodFile(jobFileName+'.done', 0.): return 'done'
+    elif isGoodFile(jobFileName+'.jid', 0.): 
+        if isGoodFile(jobFileName+'.err', 0.):
+            if hasString(jobFileName+'.err', 'RuntimeError'): return 'crushed'
+            if hasString(jobFileName+'.err', 'RuntimeError'): return 'crushed'
+            if hasString(jobFileName+'.err', 'ImportError'): return 'crushed'
+            if hasString(jobFileName+'.err', 'OSError'): return 'crushed'
+            if hasString(jobFileName+'.err', 'TypeError:'): return 'crushed'
+            if hasString(jobFileName+'.err', 'Segmentation fault'): return 'crushed'
+            if hasString(jobFileName+'.err', 'logic_error'): return 'crushed'
+            if hasString(jobFileName+'.err', 'AttributeError'): return 'crushed'
+            if hasString(jobFileName+'.err', '(core dumped)'): return 'crushed'
+            if hasString(jobFileName+'.err', '*** Break *** bus error'): return 'crushed'
+            if hasString(jobFileName+'.err', '*** Break *** segmentation violation'): return 'crushed'
+            if hasString(jobFileName+'.err', 'Input/output error'): return 'crushed'
+            if hasString(jobFileName+'.err', 'error reading from file'): return 'crushed'
+            if hasString(jobFileName+'.err', 'doesn\'t exist'): return 'crushed'
+        if isGoodFile(jobFileName+'.log', 0.):
+            if hasString(jobFileName+'.log', 'EXCEED'): return 'crushed'
+        return 'running'
+    return 'unknown'
 
 def submitJobs(opt, jobName, jobTag, jobList, requestCpus=1):
 
@@ -551,12 +573,12 @@ def submitJobs(opt, jobName, jobTag, jobList, requestCpus=1):
 
         jobDir = '/'.join([ batchFolder, job ])
         jobFileName = '/'.join([ jobDir, job ])
-        errFile=jobFileName+'.err'
-        outFile=jobFileName+'.out'
-        jidFile=jobFileName+'.jid'
 
-        if isGoodFile(jidFile, 0.):
-            if opt.force: os.system('cat '+jidFile+' | condor_rm `xargs`')
+        if jobStatus(jobFileName)=='running': 
+
+            if opt.force: 
+                print ('Tools to handle resubmission of running jobs to complete')
+                #os.system('cat '+jidFile+' | condor_rm `xargs`') # TODO need to avoid killing other job sections
             else:
                 print ('Job '+job+' for tag '+jobTag+' already running')
                 jobRunning.append(job)
@@ -569,7 +591,7 @@ def submitJobs(opt, jobName, jobTag, jobList, requestCpus=1):
         with open(os.environ["STARTPATH"]) as startFile: 
             jobFile.write(startFile.read())
         jobFile.write(jobList[job]+'\n')
-        jobFile.write('[ $? -eq 0 ] && mv '+jidFile+' '+jidFile.replace('.jid','.done') )
+        jobFile.write('[ $? -eq 0 ] && mv '+jobFileName+'.jid '+jobFileName+'.done')
         jobFile.close()
         makeExecutable(jobFileName+'.sh')
 
@@ -593,6 +615,7 @@ def submitJobs(opt, jobName, jobTag, jobList, requestCpus=1):
         return
 
     if 'cern' in hostName:
+
         jds = 'executable = '+batchFolder+'/$(JName).sh\n' 
         jds += 'universe = vanilla\n' 
         jds += 'output = '+batchFolder+'/$(JName).out\n'
@@ -610,7 +633,7 @@ def submitJobs(opt, jobName, jobTag, jobList, requestCpus=1):
         if proc.returncode != 0:
           sys.stderr.write(err.decode())
           raise RuntimeError('Job submission failed.')
-        print(out.strip().decode())
+        #print(out.strip().decode())
 
         matches = re.match('.*submitted to cluster ([0-9]*)\.'.encode('utf-8'), out.decode().split('\n')[-2].encode('utf-8'))
         if not matches:
@@ -698,20 +721,22 @@ def mergeDataTakingPeriodShapes(opt, years, tag, fileset, strategy='deep', outpu
 
 ### Pre-fit tables
 
-def yieldsTables(opt, masspoints=''):
+def yieldsTables(opt, masspoints=''): # TODO
 
     if 'fit' in opt.option.lower(): postFitYieldsTables(opt, masspoints)
     else: 
         print('please, complete me :(')
-        print('using postFitYieldsTables for the time being')
+        print('using https://github.com/scodella/PlotsConfigurations/blob/run2base/Tools/scripts/mkPostFitYieldsTables.py for the time being')
         opt.option += 'prefit'
         postFitYieldsTables(opt, masspoints)
 
-def systematicsTables(opt):
+def systematicsTables(opt): # TODO
 
-    print('please, port me from https://github.com/scodella/PlotsConfigurations/blob/worker/Configurations/SUS-19-XXX/mkSystematicsTables.py :(')
+    print('please, port me from https://github.com/scodella/PlotsConfigurations/blob/SUS23002/Configurations/SUS-19-XXX/mkSystematicsTables.py :(')
 
 ### Modules for analyzing results from combine
+
+# combine output
 
 def setupCombineCommand(opt, joinstr=''):
 
@@ -804,9 +829,13 @@ def purgeMLFits(opt):
 
     deleteDirectory(opt.mlfitdir+'/*')
 
-def massScanLimits(opt):
+# analyze limits for masspoint scan
 
-    print('please, port me from https://github.com/scodella/PlotsConfigurations/blob/worker/Configurations/SUS-19-XXX/analyzeLimits.py :(')
+def massScanLimits(opt): # TODO
+
+    print('please, port me from https://github.com/scodella/PlotsConfigurations/blob/SUS23002/Configurations/SUS-19-XXX/analyzeLimits.py :(')
+
+# analyze ML fit results
 
 def fitMatrices(opt):
 
@@ -845,6 +874,7 @@ def fitMatrices(opt):
                     signalCommandList.append('--outputDir='+'/'.join([ mainOutputDir, fitoption, signal, 'FitMatrices' ]))
                     signalCommandList.append('--signal='+signal)
 
+                    # TODO get https://github.com/scodella/PlotsConfigurations/blob/run2base/Tools/scripts/mkMatrixPlots.py
                     if not 'onlynuis' in opt.option.lower(): os.system('mkMatrixPlots.py '+' '.join(signalCommandList))
                     if not 'onlycuts' in opt.option.lower(): os.system('mkMatrixPlots.py '+' '.join(signalCommandList+['--doNuisances']))
                     copyIndexForPlots('/'.join([ mainOutputDir, fitoption, signal, 'FitMatrices' ]))
@@ -876,6 +906,7 @@ def postFitYieldsTables(opt, cardNameStructure='cut', masspoints=''):
             if opt.unblind: commandList.append('--unblind')
             if 'nosignal' in opt.option: commandList.append('--nosignal')
 
+            # TODO port https://github.com/scodella/PlotsConfigurations/blob/run2base/Tools/scripts/mkPostFitYieldsTables.py
             os.system('mkPostFitYieldsTables.py '+' '.join(commandList))
 
 def loadImpactsJSON(opt, year = '', tag = '', signal = '', jsonName = 'impacts.json'):
@@ -923,6 +954,10 @@ def loadFitParams(opt, year = '', tag = '', signal = '', fitoption = 'b'):
     return fitParams
 
 ### Methods for computing weights, efficiencies, scale factors, etc.
+
+# info from data taking conditions (pileup, trigger prescales)
+
+# TODO port https://github.com/scodella/LatinoAnalysis/blob/run2base/NanoGardener/python/data/dataTakingConditionsAnalyzer.py
 
 def getPileupScenarioFromSimulation(opt):
 
@@ -1066,15 +1101,23 @@ def pileupWeights(opt, dataFile = '', simulationFile = '', outputFile = ''):
     dataRoot.Close()
     simulationRoot.Close()
 
-def triggerEfficiencies(opt):
+#def triggerPrescales(opt): TODO port from https://github.com/scodella/PlotsConfigurations/blob/BTagPerf/Configurations/Analysis/analysisTools.py#L1805
 
-    print('please, port me from https://github.com/scodella/PlotsConfigurations/blob/worker/Configurations/SUS-19-XXX/mkTriggerEfficiencies.py :(')
+# info from MC sample production
 
-def theoryNormalizations(opt):
+# TODO can take something on McM from https://github.com/scodella/PlotsConfigurations/blob/BTagPerf/Configurations/Analysis/analysisTools.py#L1756
 
-    print('please, port me from https://github.com/scodella/PlotsConfigurations/blob/worker/Configurations/SUS-19-XXX/computeTheoryNormalizations.py :(')
+def theoryNormalizations(opt): # TODO
 
-def backgroundScaleFactors(opt):
+    print('please, port me from https://github.com/scodella/PlotsConfigurations/blob/SUS23002/Configurations/SUS-19-XXX/computeTheoryNormalizations.py :(')
 
-    print('please, port me fromhttps://github.com/scodella/PlotsConfigurations/blob/worker/Configurations/SUS-19-XXX/mkBackgroundScaleFactors.py :(')
+# other analysis weights
+
+def triggerEfficiencies(opt): # TODO
+
+    print('please, port me from https://github.com/scodella/PlotsConfigurations/blob/SUS23002/Configurations/SUS-19-XXX/mkTriggerEfficiencies.py :(')
+
+def backgroundScaleFactors(opt): # TODO
+
+    print('please, port me fromhttps://github.com/scodella/PlotsConfigurations/blob/SUS23002/Configurations/SUS-19-XXX/mkBackgroundScaleFactors.py :(')
 

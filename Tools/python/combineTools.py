@@ -266,7 +266,7 @@ def saveNuisancesPlots(opt):
         nuisancePlot = plotRootFile.Get(canvasName)
         nuisancePlot.Print('/'.join([ opt.plotsdir, opt.year, 'Impacts', 'Nuisances', '' ])+'_'.join([ opt.tag, opt.sigset, canvasName ])+'.png')
 
-def diffNuisances(opt):
+def diffNuisances(opt): # TODO need to make it work outside CMSSW 
 
     opt.baseDir = os.getenv('PWD')
     commandList = [ commonTools.setupCombineCommand(opt, '; ') ]

@@ -110,7 +110,7 @@ def mkPlot(opt, year, tag, sigset, fitoption='', yearInFit='', extraOutDirFlag='
 
 # Plot shape nuisances
 
-def plotNuisances(opt):
+def plotNuisances(opt): # TODO
 
    opt.fileset = commonTools.setFileset(opt.fileset, opt.sigset)
    opt.samplesFile = commonTools.getCfgFileName(opt, 'samples')
@@ -187,7 +187,7 @@ def plotNuisances(opt):
 
 # Plots merging different data taking periods (years) without combine (e.g. control regions)
 
-def mergedPlots(opt):
+def mergedPlots(opt): # TODO
 
     inputNuisances = commonTools.getCfgFileName(opt, 'nuisances') if 'nonuisance' not in opt.option else 'None'
     fileset = commonTools.setFileset(opt.fileset, opt.sigset)
@@ -219,7 +219,7 @@ def getDatacardNameStructure(addYearToDatacardName, addCutToDatacardName, addVar
     if addYearToDatacardName: datacardNameStructureList.append('year')
     return '_'.join(datacardNameStructureList)
 
-def mkPostFitPlot(opt, fitoption, fittedYear, year, tag, cut, variable, signal, sigset, datacardNameStructure):
+def mkPostFitPlot(opt, fitoption, fittedYear, year, tag, cut, variable, signal, sigset, datacardNameStructure): # TODO port mkPostFitPlot.py from LatinoAnalysis
 
     fitkind = 'p' if 'PreFit' in fitoption else fitoption.split('PostFit')[-1].lower()
     postFitPlotCommandList = [ '--kind='+fitkind, '--structureFile='+commonTools.getCfgFileName(opt, 'structure') ]
@@ -271,7 +271,7 @@ def mergePostFitShapes(opt, postFitShapeFile, signal, mlfitDir, cardsDir, year, 
 
     os.system(' \n '.join(commandList))
 
-def postFitPlots(opt, makePlots=True):
+def postFitPlots(opt, makePlots=True): # TODO
 
     fitoption = ''
     if 'prefit' in opt.option.lower(): fitoption = 'PreFit'
@@ -352,7 +352,7 @@ def postFitShapes(opt):
 
     postFitPlots(opt, False) 
 
-# Generic plots from mkShapes output
+# Generic plots from mkShapesRDF output
 
 def plots(opt):
 
