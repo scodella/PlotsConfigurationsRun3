@@ -2,169 +2,68 @@ import os
 import glob
 import copy
 import math
-import PlotsConfigurations.Tools.commonTools as commonTools
-from LatinoAnalysis.Tools.batchTools import *
+import commonTools
 
 ### Shapes
 
-def mkShapesMulti(opt, year, tag, splits, action):
+def mkShapesRDF(opt, year, tag, action):
 
-    mainDir = '/'.join([ opt.shapedir, year, tag ])
+    mkShapesRDFCommandList = [ 'mkShapesRDF' ]
+    mkShapesRDFCommandList.append('--configFile='+commonTools.compileConfigurations(opt, action, year, tag, configsFolder=opt.configsFolder+'/'+action))
 
-    shapeScript = 'mkShapesMulti.py' if 'mkshape' not in opt.option.lower() else 'mkShapes.py'
-    shapeMultiCommand = shapeScript+' --pycfg='+opt.configuration+' --treeName='+opt.treeName+' --tag='+year+tag+' --sigset=SIGSET'
-    if 'shapes' in action:
-        if not opt.interactive: shapeMultiCommand += ' --doBatch=True --batchQueue='+opt.batchQueue
-        if opt.dryRun: shapeMultiCommand += ' --dry-run '
-    else:
-        shapeMultiCommand += ' --doHadd=True --doNotCleanup'
+    if action=='shapes':
+        mkShapesRDFCommandList.append('--operationMode=0')
+        if not opt.interactive: mkShapesRDFCommandList.extend([ '--doBatch=1', '--queue='+opt.batchQueue ])
+        else: mkShapesRDFCommandList.append('--limitEvents=100')
+        if opt.dryRun: mkShapesRDFCommandList.append('--dryRun=1')
 
-    for split in splits:
-        if len(splits[split])>0:
+    elif 'jobs' in action: 
+        mkShapesRDFCommandList.append('--operationMode=1')
+        if 'resubmitall' in action: mkShapesRDFCommandList.append('--resubmit=2')
+        elif 'resubmit' in action: mkShapesRDFCommandList.append('--resubmit=1')
 
-            splitDir = mainDir + '/' + split
-            os.system('mkdir -p '+splitDir)
+    elif action=='mergeshapes':
+        mkShapesRDFCommandList.insert(0, 'rm -f '+commonTools.getShapeFileName(opt.shapedir, year, tag, '', '', 'Split')+';')
+        mkShapesRDFCommandList.append('--operationMode=2')
+        mkShapesRDFCommandList.append('; mv '+commonTools.getShapeFileName(opt.shapedir, year, tag, '', '', 'Split')+' '+commonTools.getShapeFileName(opt.shapedir, year, tag, opt.sigset, ''))
 
-            splitCommand = shapeMultiCommand+' --outputDir='+splitDir+' --batchSplit='+split
- 
-            if 'merge' in action:
-
-                sampleFlag = '_SIGSET' if 'mkshape' not in opt.option.lower() else '' #if 'worker' in commonTools.getBranch() else '' 
-                outputDir = mainDir if 'mergeall' in action else mainDir+'/Samples'
-                splitCommand += ' ; mkdir -p '+outputDir+' ; mv '+splitDir+'/plots_'+year+tag+sampleFlag+'.root '+outputDir
-                if 'mergesingle' in action: splitCommand += '/plots_'+year+tag+'_ALL_SAMPLE.root'
-                else: splitCommand += '/plots_'+tag+commonTools.setFileset('',opt.sigset)+'.root'
-          
-            for sample in splits[split]:
-                commonTools.resetShapes(opt, split, year, tag, sample, opt.reset)
-                os.system(splitCommand.replace('SIGSET', sample).replace('SAMPLE', sample.split(':')[-1]))
- 
-def getSplits(opt, year, tag, action):
-
-    splits = { 'Samples' : [ ], 'AsMuchAsPossible' : [ ] }
-
-    samples = commonTools.getSamplesInLoop(opt.configuration, year, tag, opt.sigset)
-
-    for sample in samples:
-        treeType = samples[sample]['treeType']+':'
-        if 'split' in samples[sample] and samples[sample]['split']=='AsMuchAsPossible':
-            if opt.recover:
-                jobsForSamples = 0
-                if 'FilesPerJob' in samples[sample]: jobsForSamples = int(math.ceil(float(len(samples[sample]['name']))/samples[sample]['FilesPerJob']))
-                elif 'JobsPerSample' in samples[sample]: jobsForSamples = int(samples[sample]['JobsPerSample']) 
-                if jobsForSamples>0:
-                    if commonTools.countedSampleShapeFiles(opt.shapedir, year, tag, sample)==jobsForSamples: continue
-            if 'FilesPerJob' not in samples[sample]:
-                if 'JobsPerSample' not in samples[sample]:
-                    print('Warning:', sample, 'has neither FilesPerJob nor JobsPerSample options')
-                    continue
-                ntrees, multFactor = len(samples[sample]['name']), int(samples[sample]['JobsPerSample'])
-                samples[sample]['FilesPerJob'] = int(math.ceil(float(ntrees)/multFactor))
-            splits['AsMuchAsPossible'].append(treeType+sample)
-        elif 'shapes' in action:
-            if opt.recover and commonTools.foundSampleShapeFile(opt.shapedir, year, tag, sample): continue
-            if 'split' in samples[sample] and samples[sample]['split']=='Single':
-                splits['Samples'].append(treeType+':'+sample)
-            else: 
-                sampleList = -1
-                for ilist in range(len(splits['Samples'])):
-                    if treeType in splits['Samples'][ilist] and '::' not in splits['Samples'][ilist]:
-                        sampleList = ilist
-                if sampleList==-1: splits['Samples'].append(treeType+sample)
-                else:              splits['Samples'][sampleList] += ','+sample
-                
-    return splits
+    os.system(' '.join(mkShapesRDFCommandList))
 
 def shapes(opt):
 
     if '_' in opt.tag:
-        print('Error in shapes: one of the selecteg tags contains an \'_\'.') 
+        print('Error in shapes: one of the selected tags contains an \'_\'.') 
         print('                 Please use \'_\' only to set datacard options.')
         exit()
 
     if not opt.interactive: opt.batchQueue = commonTools.batchQueue(opt, opt.batchQueue)
 
-    commonTools.cleanLogs(opt)
+    action = 'shapes'
+    if opt.merge: action = 'mergeshapes'
+    elif opt.checkjobs: action = 'checkjobs'
+    elif opt.recover: 
+        if opt.force: action = 'resubmitalljobs'
+        else: action = 'resubmitjobs'
 
     for year in opt.year.split('-'):
         for tag in opt.tag.split('-'):
-            splits = getSplits(opt, year, tag, 'shapes')
-            mkShapesMulti(opt, year, tag, splits, 'shapes')
 
-def mergesingle(opt):
+            if action=='shapes':
+                if opt.reset: commonTools.resetShapes(opt, year, tag)
+                else: commonTools.cleanShapeLogs(opt, year, tag, opt.sigset)
 
-    for year in opt.year.split('-'):
-        for tag in opt.tag.split('-'):
-            splits = getSplits(opt, year, tag, 'mergesingle')
-            mkShapesMulti(opt, year, tag, splits, 'mergesingle')
-
-def mergeall(opt):
-
-    splits = { 'Samples' : [ opt.sigset ] }
-
-    for year in opt.year.split('-'):
-        for tag in opt.tag.split('-'):
-            mkShapesMulti(opt, year, tag, splits, 'mergeall')
-
-def remakeMissingShapes(opt, method='resubmit'):
-
-    sampleShapeDir = '/'.join([ opt.shapedir, opt.year, opt.tag, 'AsMuchAsPossible' ])
-
-    for shFile in commonTools.getLogFileList(opt, 'sh'):
-
-        sample = shFile.split('/')[3]
-        if not commonTools.isGoodFile(sampleShapeDir+'/plots_'+opt.year+opt.tag+'_ALL_'+sample+'.root', 0):
-
-            missingShape = False
-            if 'force' in opt.option.lower(): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.done'), 0): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'RuntimeError'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'ImportError'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'OSError'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'TypeError:'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'Segmentation fault'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'logic_error'): missingShape = True 
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'AttributeError'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), '(core dumped)'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), '*** Break *** bus error'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), '*** Break *** segmentation violation'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'Input/output error'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'error reading from file'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.err'), 0) and commonTools.hasString(shFile.replace('.sh','.err'), 'doesn\'t exist'): missingShape = True
-            if commonTools.isGoodFile(shFile.replace('.sh','.log'), 0) and commonTools.hasString(shFile.replace('.sh','.log'), 'EXCEED'): missingShape = True
-            if not commonTools.isGoodFile(shFile.replace('.sh','.jid'), 0) and not commonTools.isGoodFile(shFile.replace('.sh','.done'), 0): missingShape = True
-
-            if missingShape:
-
-                if method=='resubmit':
-                    for extensionToRemove in [ '.err', '.log', '.out', '.done', '.jid' ]:
-                        if commonTools.isGoodFile(shFile.replace('.sh',extensionToRemove), 0): os.system('rm '+shFile.replace('.sh',extensionToRemove))
-                    makeShapeCommand = 'condor_submit '+shFile.replace('.sh','.jds')+' > ' +shFile.replace('.sh','.jid')
-
-                elif method=='recover':
-                    makeShapeCommand = ' ; '.join([ 'cd '+commonTools.getLogDir(opt, opt.year, opt.tag)+'/'+sample+'/', './'+shFile.split('/')[-1], 'cd - ' ])
-
-                print('  Remaking missing shape for', opt.year, opt.tag, sample)
-                if opt.dryRun: print(makeShapeCommand)
-                else: os.system(makeShapeCommand)
-            
-            elif commonTools.isGoodFile(shFile.replace('.sh','.err'), 0): print('  Job with error to check:', opt.year, opt.tag, sample)
-
-        else:
-            os.system('rm -r '+shFile.replace(shFile.split('/')[-1],''))
+            mkShapesRDF(opt, year, tag, action)
 
 ### Plots
 
-def mkPlot(opt, year, tag, sigset, nuisances, fitoption='', yearInFit='', extraOutDirFlag=''):
-
-    plotAsExotics = commonTools.plotAsExotics(opt)
+def mkPlot(opt, year, tag, sigset, fitoption='', yearInFit='', extraOutDirFlag=''):
 
     plotsDirList = [ opt.plotsdir, year ]
 
     if fitoption=='':
         fileset = opt.fileset
         sample = '' if (sigset=='SM' or sigset=='') else sigset.split(':')[-1]+extraOutDirFlag
-        plotsDirList.extend([ tag.split('___')[0].replace('__','/'), sample ])
+        plotsDirList.extend([ commonTools.getTagOutputDir(tag), sample ])
         lumiYear = year
 
     else:
@@ -176,42 +75,42 @@ def mkPlot(opt, year, tag, sigset, nuisances, fitoption='', yearInFit='', extraO
             signal = sigset
             for ismp in range(len(sigset.split('_')[0].split('-'))-1):
                 signal = signal.replace(sigset.split('_')[0].split('-')[ismp]+'-','')
-        plotsDirList.extend([ tag.split('___')[0].replace('__','/'), fitoption, signal, yearInFit ])
-        if 'PostFitS' in fitoption: plotAsExotics = False
+        plotsDirList.extend([ commonTools.getTagOutputDir(tag), fitoption, signal, yearInFit ])
 
     plotsDir = '/'.join(plotsDirList)
+    commonTools.copyIndexForPlots(plotsDir)
 
-    shapeFileName = commonTools.getShapeFileName(opt.shapedir, year, tag, sigset, fileset, fitoption+yearInFit) 
+    plotCommandList = [ 'mkPlot' ]
+    plotCommandList.extend([ '--maxLogCratio=1000', '--minLogCratio=0.1', '--maxLogC=1000',  '--scaleToPlot=2' ]) 
 
-    os.system('mkdir -p '+plotsDir+' ; cp ../../index.php '+opt.plotsdir)
-    commonTools.copyIndexForPlots(opt.plotsdir, plotsDir)
+    if 'normalized' in opt.option: plotCommandList.extend(['--plotNormalizedDistributions', '--plotNormalizedIncludeDats'])
+    if commonTools.plotAsExotics(opt): plotCommandList.append('--showDataVsBkgOnly') # TODO
+    if 'noyields' not in opt.option: plotCommandList.append('--showIntegralLegend=1')
+    if 'postfit' in opt.option.lower(): plotCommandList.append(' --postFit=p')
+    if 'nostat' in opt.option.lower(): plotCommandList.append('--removeMCStat')
+    if 'nuisanceVariations' in opt.option: plotCommandList.append(' --nuisanceVariations') # TODO
+    if 'cutlabel' in opt.option.lower(): plotCommandList.append(' --addCutLabels') # TODO
+    if opt.paperStyle: plotCommandList.append(' --paperStyle') # TODO
 
-    plotCommand = 'mkPlot.py --pycfg='+opt.configuration+' --tag='+lumiYear+tag+' --sigset='+sigset+' --inputFile='+shapeFileName+' --outputDirPlots='+plotsDir+' --maxLogCratio=1000 --minLogCratio=0.1 --maxLogC=1000  --scaleToPlot=2 --nuisancesFile='+nuisances+' --fileFormats=\'png,root\''
+    formatsToSave = 'png,root'
+    if 'saveC'   in opt.option: formatsToSave += ',C'
+    if 'savePDF' in opt.option: formatsToSave += ',pdf'
+    plotCommandList.append('--fileFormats=\''+formatsToSave+'\'')
 
-    if 'normalizedCR' in opt.option: plotCommand += ' --plotNormalizedCRratio=1' # This is not yet re-implemented in latino's mkPlot.py
-    elif 'normalized' in opt.option: plotCommand += ' --plotNormalizedDistributions --plotNormalizedIncludeData'
-    if plotAsExotics:                plotCommand += ' --showDataVsBkgOnly'       # This is not yet re-implemented in latino's mkPlot.py
-    if 'noyields' not in opt.option: plotCommand += ' --showIntegralLegend=1'
-    if 'saveC'        in opt.option: plotCommand  = plotCommand.replace('--fileFormats=\'','--fileFormats=\'C,')
-    if 'savePDF'      in opt.option: plotCommand  = plotCommand.replace('--fileFormats=\'','--fileFormats=\'pdf,')
-    if 'plotsmearvar' in opt.option: plotCommand += ' --plotSmearVariation=1'    # This is not yet re-implemented in latino's mkPlot.py
-    if 'postfit' in opt.option.lower(): plotCommand += ' --postFit=p'
-    if 'nostat' in opt.option.lower() : plotCommand += ' --removeMCStat'
-    if 'nuisanceVariations' in opt.option: plotCommand += ' --nuisanceVariations'
-    if 'onebin' in opt.option.lower() : plotCommand += ' --mergeBins'
-    if 'cutlabel' in opt.option.lower(): plotCommand += ' --addCutLabels'
-    if opt.paperStyle: plotCommand += ' --paperStyle'
+    configFile = commonTools.compileConfigurations(opt, 'plots', year, tag, sigset, fileset=fileset, plotPath=plotsDir)
 
-    os.system(plotCommand)
+    os.system(' '.join(plotCommandList))
 
     if not opt.keepallplots:
         plotToDelete = 'c_' if ('SM' in opt.sigset or 'keepratioplots' in opt.option) else 'cratio_'
         for plot2delete in [ plotToDelete, 'log_'+plotToDelete, 'cdifference_', 'log_cdifference_' ]:
             os.system('rm '+plotsDir+'/'+plot2delete+'*')
 
+    commonTools.cleanConfigs(opt, configFile)
+
 # Plot shape nuisances
 
-def plotNuisances(opt):
+def plotNuisances(opt): # TODO
 
    opt.fileset = commonTools.setFileset(opt.fileset, opt.sigset)
    opt.samplesFile = commonTools.getCfgFileName(opt, 'samples')
@@ -222,8 +121,8 @@ def plotNuisances(opt):
    for year in yearList:
        for tag in opt.tag.split('-'):
 
-           opt2 = copy.deepcopy(opt)
-           opt2.year, opt2.tag = year, tag
+           optAux = copy.deepcopy(opt)
+           optAux.year, optAux.tag = year, tag
      
            singleNuisances = {}
 
@@ -232,7 +131,7 @@ def plotNuisances(opt):
                outputNuisances =  '_'.join([ 'nuisances', year, tag, opt.sigset+'.py' ])
                commonTools.mergeDataTakingPeriodShapes(opt, year, tag, opt.fileset[1:], '', 'None', commonTools.getCfgFileName(opt, 'nuisances'), outputNuisances, opt.verbose)
 
-               samples, cuts, variables = commonTools.getDictionaries(opt2, 'variables')
+               samples, cuts, variables = commonTools.getDictionaries(optAux, 'variables')
                nuisances = {}
                handle = open(outputNuisances,'r')
                exec(handle)
@@ -241,7 +140,7 @@ def plotNuisances(opt):
 
            else:
 
-               samples, cuts, variables, nuisances = commonTools.getDictionaries(opt2)
+               samples, cuts, variables, nuisances = commonTools.getDictionaries(optAux)
 
            for nuisance in nuisances:
                if nuisance=='stat' or ('type' in nuisances[nuisance] and nuisances[nuisance]['type']=='shape'):
@@ -254,7 +153,7 @@ def plotNuisances(opt):
 
            for singleNuisance in singleNuisances:
 
-               opt2.option = opt.option if singleNuisance=='statistics' else opt.option+'nuisanceVariations'
+               optAux.option = opt.option if singleNuisance=='statistics' else opt.option+'nuisanceVariations'
 
                backgroundList, sampleList = [], []
 
@@ -281,14 +180,14 @@ def plotNuisances(opt):
                    file.write('nuisances = '+str(singleNuisances[singleNuisance]))                   
 
                for samplesToPlot in sampleList:
-                   opt2.sigset = samplesToPlot
-                   mkPlot(opt2, year, tag, opt2.sigset, singleNuisanceFile, extraOutDirFlag='_'+singleNuisance)
+                   optAux.sigset = samplesToPlot
+                   mkPlot(optAux, year, tag, optAux.sigset, singleNuisanceFile, extraOutDirFlag='_'+singleNuisance)
 
                os.system('rm '+singleNuisanceFile)
 
 # Plots merging different data taking periods (years) without combine (e.g. control regions)
 
-def mergedPlots(opt):
+def mergedPlots(opt): # TODO
 
     inputNuisances = commonTools.getCfgFileName(opt, 'nuisances') if 'nonuisance' not in opt.option else 'None'
     fileset = commonTools.setFileset(opt.fileset, opt.sigset)
@@ -320,7 +219,7 @@ def getDatacardNameStructure(addYearToDatacardName, addCutToDatacardName, addVar
     if addYearToDatacardName: datacardNameStructureList.append('year')
     return '_'.join(datacardNameStructureList)
 
-def mkPostFitPlot(opt, fitoption, fittedYear, year, tag, cut, variable, signal, sigset, datacardNameStructure):
+def mkPostFitPlot(opt, fitoption, fittedYear, year, tag, cut, variable, signal, sigset, datacardNameStructure): # TODO port mkPostFitPlot.py from LatinoAnalysis
 
     fitkind = 'p' if 'PreFit' in fitoption else fitoption.split('PostFit')[-1].lower()
     postFitPlotCommandList = [ '--kind='+fitkind, '--structureFile='+commonTools.getCfgFileName(opt, 'structure') ]
@@ -339,7 +238,7 @@ def mkPostFitPlot(opt, fitoption, fittedYear, year, tag, cut, variable, signal, 
 
     os.system('mkPostFitPlot.py '+' '.join(postFitPlotCommandList))
 
-def mergePostFitShapes(opt, postFitShapeFile, signal, mlfitDir, cardsDir, year, cut, variable, datacardNameStructure):
+def mergePostFitShapes(opt, postFitShapeFile, signal, mlfitDir, cardsDir, year, cut, variable, datacardNameStructure): # TODO port to RDF
 
     combinedataset = '_asimovS' if 'asimovs' in opt.option.lower() else '_asimovB' if 'asimovb' in opt.option.lower() else ''
     fitdirectory = 'fit_b' if 'postfitb' in opt.option.lower() else 'fit_s'
@@ -362,7 +261,7 @@ def mergePostFitShapes(opt, postFitShapeFile, signal, mlfitDir, cardsDir, year, 
         inputCardName = datacardNameStructure.replace('year',cardInputs[1]).replace('cut',cardInputs[4]).replace('variable',cardInputs[5]) 
         inputCardList.append(inputCardName+'='+card.split(cardsDir+'/')[1])
 
-    commandList = [ commonTools.setupCombineCommand(opt) ]
+    commandList = [ commonTools.setupCombineCommand(opt, '\n') ]
     commandList.append('cd '+cardsDir)
     commandList.append('combineCards.py '+' '.join(inputCardList)+' > combinedDatacard__'+outputCut+'.txt')
     commandList.append('text2workspace.py combinedDatacard__'+outputCut+'.txt')
@@ -372,7 +271,7 @@ def mergePostFitShapes(opt, postFitShapeFile, signal, mlfitDir, cardsDir, year, 
 
     os.system(' \n '.join(commandList))
 
-def postFitPlots(opt, makePlots=True):
+def postFitPlots(opt, makePlots=True): # TODO
 
     fitoption = ''
     if 'prefit' in opt.option.lower(): fitoption = 'PreFit'
@@ -402,7 +301,7 @@ def postFitPlots(opt, makePlots=True):
             yearInFitList = fittedYear.split('-')
             if 'mergeyear' in opt.option and '-' in fittedYear: yearInFitList.append(fittedYear) 
 
-            signals = commonTools.getDictionariesInLoop(opt.configuration, yearInFitList[0], tag, opt.sigset, 'samples')
+            signals = commonTools.getDictionariesInLoop(opt, yearInFitList[0], tag, opt.sigset, 'samples')
             for signal in signals:
                 if signals[signal]['isSignal']:
 
@@ -423,7 +322,7 @@ def postFitPlots(opt, makePlots=True):
                             os.system('rm -f '+postFitShapeFile)
                             os.system('mkdir -p '+commonTools.getShapeDirName(opt.shapedir, fittedYear, tag, fityearoption))
 
-                            samples, cuts, variables = commonTools.getDictionariesInLoop(opt.configuration, year, tag, sigset, 'variables', 'X')
+                            samples, cuts, variables = commonTools.getDictionariesInLoop(opt, year, tag, sigset, 'variables', 'X')
                             datacardNameStructure = getDatacardNameStructure(len(fittedYear.split('-'))>1, len(list(cuts.keys()))>1, len(list(variables.keys()))>1)
 
                             if len(yearInFitList)>1 and year==fittedYear:
@@ -439,10 +338,10 @@ def postFitPlots(opt, makePlots=True):
                                             mkPostFitPlot(opt, combinedataset+'/'+fitoption, fittedYear, year, tag, cut, variable, signal, sigset, datacardNameStructure)
 
                                         elif cut not in samples[signal]['removeFromCuts']: # Check this
-                                            opt2 = copy.deepcopy(opt)
-                                            opt2.year, opt2.tag, opt2.sigset, opt2.baseDir = year, combinetag, sigset, os.getenv('PWD')
-                                            postFitShapeFileFullPath = commonTools.mergeDirPaths(opt2.baseDir, postFitShapeFile)
-                                            mergePostFitShapes(opt2, postFitShapeFileFullPath, signal, mlfitDir, cardsDir, '*', cut, variable, datacardNameStructure)
+                                            optAux = copy.deepcopy(opt)
+                                            optAux.year, optAux.tag, optAux.sigset, optAux.baseDir = year, combinetag, sigset, os.getenv('PWD')
+                                            postFitShapeFileFullPath = commonTools.mergeDirPaths(optAux.baseDir, postFitShapeFile)
+                                            mergePostFitShapes(optAux, postFitShapeFileFullPath, signal, mlfitDir, cardsDir, '*', cut, variable, datacardNameStructure)
 
                             if len(yearInFitList)>1 and year==fittedYear: os.system('rm -r -f '+cardsDir)
 
@@ -453,7 +352,7 @@ def postFitShapes(opt):
 
     postFitPlots(opt, False) 
 
-# Generic plots from mkShapes output
+# Generic plots from mkShapesRDF output
 
 def plots(opt):
 
@@ -463,74 +362,50 @@ def plots(opt):
 
         if not commonTools.foundShapeFiles(opt, True): exit()
 
-        nuisances = commonTools.getCfgFileName(opt, 'nuisances') if 'nonuisance' not in opt.option else 'None'
-
         for year in opt.year.split('-'):
             for tag in opt.tag.split('-'):
-                mkPlot(opt, year, tag, opt.sigset, nuisances)
+                mkPlot(opt, year, tag, opt.sigset)
 
 ### Datacards
 
-def getPerSignalSigset(inputfileset, inputsigset):
+def datacards(opt, signal='', combineOutDir='cardsdir', dryRun=False):
 
-    fileset = commonTools.setFileset(inputfileset, inputsigset)
+    fileset = commonTools.getFileset(opt.fileset, opt.sigset)
 
-    if '-' in fileset:                       # This is SUSY like
-        auxfileset = fileset if fileset[0]!='_' else fileset[1:]
-        auxfileset = auxfileset.split('_')[0]
-        sigset = auxfileset.replace(auxfileset.split('-')[-1], '')+'MASSPOINT'
-    elif inputsigset=='' or inputsigset=='SM': # This should work for SM searches
-        sigset = inputsigset
-    else:                                    # Guessing latinos' usage
-        sigset = 'MASSPOINT'
+    if signal!='': signalList = [ signal ]
+    else: signalList = commonTools.getSignalList(opt)
 
-    return fileset, sigset
-
-def datacards(opt, signal='', dryRun=False):
-
-    fileset, sigset = getPerSignalSigset(opt.fileset, opt.sigset)
-
-    if signal!='': 
-        signalList = [ signal ]
-    else: 
-        signalList = []
-        samples = commonTools.getSamples(opt)
-        for sample in samples:
-            if samples[sample]['isSignal']:
-                signalList.append(sample)
-
-    datacardCommandList = []
+    datacardsCommandList = []
 
     blindData = '' if opt.unblind else ' --blindData '
 
-    for year in opt.year.split('-'):
-        for tag in opt.tag.split('-'):
+    opt.cardsdir = commonTools.mergeDirPaths(opt.baseDir, opt.cardsdir)
+    opt.shapedir = commonTools.mergeDirPaths(opt.baseDir, opt.shapedir)
 
-            outtag = commonTools.getTagForDatacards(tag, opt.sigset)
+    for signal in signalList:
 
-            for sample in signalList:
+        sigset = commonTools.getPerSignalSigset(fileset, opt.sigset, signal)
+        signalWorkDir = commonTools.mergeDirPaths(opt.baseDir, commonTools.getSignalDir(opt, opt.year, opt.tag, signal, combineOutDir))
 
-                outputDir = commonTools.getSignalDir(opt, year, outtag, sample, 'cardsdir')
+        for year in opt.year.split('-'):
 
-                datacardCommand = 'mkdir -p '+outputDir+' \n mkDatacards.py --pycfg='+opt.configuration+' --tag='+year+tag+' --sigset='+sigset.replace('MASSPOINT',sample)+' --outputDirDatacard='+outputDir+' --inputFile='+commonTools.getShapeFileName(opt.shapedir, year, tag.split('_')[0], '', fileset)+blindData
+            datacardsWorkDir = '/'.join([ signalWorkDir, year ])
+            outputDir = commonTools.getSignalDir(opt, year, opt.tag, signal, 'cardsdir')
+            datacardCommandList = [ 'cd '+datacardsWorkDir ]
+            datacardCommandList.append('mkdir -p '+outputDir)
+            datacardCommandList.append('mkDatacards --outputDirDatacard='+outputDir)
+            datacardCommandList.append('cd '+opt.baseDir)
 
-                if dryRun: datacardCommandList.append(datacardCommand) 
-                else: os.system(datacardCommand)
+            if dryRun: 
+                datacardsCommandList.extend(datacardCommandList) 
 
-    if dryRun: return datacardCommandList
+            else:
+                datacardsConfigsDir = '/'.join([ datacardsWorkDir, 'configs' ]) 
+                os.system('mkdir -p '+datacardsConfigsDir)
+                configFile = commonTools.compileConfigurations(opt, 'datacards', year, opt.tag, sigset, fileset, configsFolder=datacardsConfigsDir)
+                os.system('\n'.join(datacardCommandList))
+                commonTools.deleteDirectory(datacardsWorkDir, opt.force)
 
-### Batch
+    if dryRun: return datacardsCommandList
 
-def submitJobs(opt, jobName, jobTag, targetList, splitBatch, jobSplit, nThreads):
-
-    opt.batchQueue = commonTools.batchQueue(opt, opt.batchQueue)
-
-    jobs = batchJobs(jobName,jobTag,['ALL'],list(targetList.keys()),splitBatch,'',JOB_DIR_SPLIT_READY=jobSplit)
-    jobs.nThreads = nThreads
-
-    for signal in targetList:
-        jobs.Add('ALL', signal, targetList[signal])
-
-    if not opt.dryRun:
-        jobs.Sub(opt.batchQueue,opt.IiheWallTime,True)
 
