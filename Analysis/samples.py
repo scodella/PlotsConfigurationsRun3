@@ -1,72 +1,121 @@
 import os
-import subprocess
-import math
-import string
-from LatinoAnalysis.Tools.commonTools import *
+from mkShapesRDF.lib.search_files import SearchFiles
 
-### Generals
+### Methods
 
-opt.CME = 'XXX'
-opt.lumi = 999.999
-treePrefix= 'nanoLatino_'
+def nanoGetSampleFiles(path, name, treename):
+    if skipTreesCheck: return [(name, [ 'dummy.root' ])]
+    _files = s.searchFiles(path, treename, redirector=redirector, isLatino=isLatino)
+    if limitFiles != -1 and len(_files) > limitFiles:
+        return [(name, _files[:limitFiles])]
+    else:
+        return [(name, _files)]
 
-isDatacardOrPlot = hasattr(opt, 'outputDirDatacard') or hasattr(opt, 'postFit') or hasattr(opt, 'skipLNN') or hasattr(opt, 'inputDirMaxFit')
+def addSampleWeight(samples, sampleName, sampleNameType, weight):
+    obj = list(filter(lambda k: k[0] == sampleNameType, samples[sampleName]["name"]))[0]
+    samples[sampleName]["name"] = list(
+        filter(lambda k: k[0] != sampleNameType, samples[sampleName]["name"])
+    )
+    if len(obj) > 2:
+        samples[sampleName]["name"].append(
+            (obj[0], obj[1], obj[2] + "*(" + weight + ")")
+        )
+    else:
+        samples[sampleName]["name"].append((obj[0], obj[1], "(" + weight + ")"))
 
-### Directories
+### Process utilities
 
-skipTreesCheck = False
+samples = {}
 
-if not isDatacardOrPlot: 
-    if skipTreesCheck:
-        print('Error: it is not allowed to fill shapes and skipping trees check!')
-        exit()
+s = SearchFiles()
+
+isDatacardOrPlot = action=='plots' or action=='datacards' 
+isPlot = action=='plots'
+isShape = 'shapes' in action
+isFillShape = action=='shapes'
+
+redirector = ''
+isLatino = False
+limitFiles = -1
+skipTreesCheck = not isShape
+
+### Sample directories
 
 SITE=os.uname()[1]
 if 'cern' not in SITE and 'ifca' not in SITE and 'cloud' not in SITE: SITE = 'cern'
 
-### Nuisance parameters
+if 'cern' in SITE:
+    treeBaseDirMC   = 'XXX'
+    treeBaseDirData = 'XXX'
+else: print('trees for', campaign, 'campaign available only at cern')
 
-### Analysis Parameters
+ProductionMC   = campaign
+ProductionData = campaign
+  
+directoryBkg  = '/'.join([ treeBaseDirMC,   ProductionMC  , '' ])
+directoryData = '/'.join([ treeBaseDirData, ProductionData, '' ])
+
+### General parameters
+
+CME = '13.6'
+lumi = 1. if 'Validation' in tag else 9.451 if 'Summer23BPix' in campaign else 17.650
 
 ### Complex variables
 
-### Weights and filters
+### MC
 
-### Backgrounds
+if 'SM' in sigset or 'MC' in sigset:
+
+    print('Add you MC samples year')
+
+    #samples['XXX'] = { 'name' : nanoGetSampleFiles( ... ), 
+    #                   'weight' : '1.', 
+    #                   'isSignal' : 0 }
+
+    #addSampleWeight( ... )
 
 # Common MC keys
 
 for sample in samples:
 
     samples[sample]['isDATA']    = 0
-    samples[sample]['isSignal']  = 0
     samples[sample]['isFastsim'] = 0
-    samples[sample]['treeType']  = 'MC'
     samples[sample]['suppressNegative']          = ['all']
     samples[sample]['suppressNegativeNuisances'] = ['all']
     samples[sample]['suppressZeroTreeNuisances'] = ['all']
+    samples[sample]['JobsPerSample'] = 20*nPtHatBins if 'Light' in tag else 8*nPtHatBins
 
 ### Data
 
-### Signals
+if 'SM' in sigset or 'Data' in sigset:
 
+    print('Add you data samples year')
+
+    #samples['DATA']  = { 'name'      : nanoGetSampleFiles( ... ),
+    #                     'weight'    : '1.' ,
+    #                     'isData'    : ['all'] ,
+    #                     'isSignal'  : 0 ,
+    #                     'isDATA'    : 1 ,
+    #                     'isFastsim' : 0 ,
+    #                     'JobsPerSample' : 10,
+    #                    }
+     
 ### Files per job
- 
+
 for sample in samples:
-    if sample in [ 'sample1', 'sample2', 'sample3' ] or 'FilesPerJob' in samples[sample] or 'JobsPerSample' in samples[sample]: 
-        samples[sample]['split'] = 'AsMuchAsPossible'
-        if 'FilesPerJob' not in samples[sample] and 'JobsPerSample' not in samples[sample]:
-            samples[sample]['JobsPerSample'] = '6'
-    elif sample in [ 'sample4', 'sample5', 'sample6' ]:
-        samples[sample]['split'] = 'Single'
+    if 'FilesPerJob' not in samples[sample] and 'JobsPerSample' in samples[sample]:
+        ntrees = 0
+        for sampleType in samples[sample]['name']: ntrees += len(sampleType[1])
+        multFactor = int(samples[sample]['JobsPerSample'])
+        samples[sample]['FilesPerJob'] = int(math.ceil(float(ntrees)/multFactor))
 
-### Cleaning (a bit analysis dependent, but keep it for the moment)
+### Cleaning
 
-if opt.sigset.split('-')[0] not in [ 'SM', 'MC', 'Backgrounds', 'Data' ]:
+if sigset.split('-')[0] not in [ 'SM', 'MC', 'Data' ]:
 
     sampleToRemove = [ ]
 
-    shortset = opt.sigset.split('-')[0]
+    shortset = sigset.split('-')[0]
 
     for sample in samples:
         if 'Veto' in shortset:
@@ -77,12 +126,4 @@ if opt.sigset.split('-')[0] not in [ 'SM', 'MC', 'Backgrounds', 'Data' ]:
 
     for sample in sampleToRemove:
         del samples[sample]
-
-### Nasty clean up for eos
-
-if 'cern' in SITE:
-    for sample in samples:
-        for ifile in range(len(samples[sample]['name'])):
-            samples[sample]['name'][ifile] = samples[sample]['name'][ifile].replace('root://eoscms.cern.ch/', '')
-
 

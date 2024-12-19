@@ -1,8 +1,20 @@
-##### cuts = {}
+from copy import deepcopy
 
-def andCuts(cutList):
-    return ' && '.join(cutList)
+### Methods
+
+def andCuts(cutList, addParentheses=False):
+    totalCut = ' && '.join([ x for x in cutList if x!='' ])
+    if addParentheses: return '('+totalCut+')'
+    else: return totalCut
 
 def orCuts(cutList, operator = ' || '):
-    return '(' + operator.join([ '('+x+')' for x in cutList ]) + ')'
+    return '(' + operator.join([ '('+x+')' for x in cutList if x!='' ]) + ')'
+
+###
+
+cuts = {}
+
+preselections = 'true'
+
+
 

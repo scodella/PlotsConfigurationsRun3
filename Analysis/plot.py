@@ -2,11 +2,12 @@
 
 ### General parameters
 
-if opt.lumi>100: lumi_i=int(round(opt.lumi, 0))
-else           : lumi_i=round(opt.lumi, 1)
+legend = {}
+if lumi>100: lumi_i=int(round(lumi, 0))
+else           : lumi_i=round(lumi, 1)
 #legend['lumi'] = 'L = '+str(lumi_i)+'/fb'
 legend['lumi'] = str(lumi_i)+' fb^{-1} '
-legend['sqrt'] = '#sqrt{s} = '+opt.CME+' TeV'
+legend['sqrt'] = '#sqrt{s} = '+CME+' TeV'
 
 # CMS colour scheme
 # https://gitlab.cern.ch/cms-analysis/analysisexamples/plotting-demo/-/blob/master/1-tutorial_CAT_recommendations.ipynb

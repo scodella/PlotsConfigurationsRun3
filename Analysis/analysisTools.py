@@ -1,8 +1,8 @@
 import os
 import ROOT
-import PlotsConfigurations.Tools.commonTools as commonTools
-import PlotsConfigurations.Tools.latinoTools as latinoTools
-import PlotsConfigurations.Tools.combineTools as combineTools
+import commonTools
+import latinoTools
+import combineTools
 import copy
 import math
 import ctypes
@@ -12,9 +12,12 @@ from array import array
 
 def setAnalysisDefaults(opt):
 
-    # Uncomment this line if you need to read here the analysis parameters
-    #samples = commonTools.getSamples(opt) 
-    pass
+    opt.baseDir = os.getenv('PWD')
+    opt.combineLocation = 'XXX/CMSSW_14_1_0_pre4/src'
+
+    opt.filesToExec = {}
+    if 'XXX' in opt.year:
+        opt.filesToExec['samples.py'] = 'samples_XXX.py'
 
 ### Shapes
 

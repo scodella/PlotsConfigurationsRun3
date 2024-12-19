@@ -1,14 +1,15 @@
-##### aliases = {}
-
 import os
+import json
+import datetime
+from array import array
 
-includePath = 'gSystem->AddIncludePath("-I%s/src/");' % os.getenv('CMSSW_RELEASE_BASE')
-aliasDir = os.getenv('PWD')+'/aliases'
+aliases = OrderedDict()
 
-## Example
-#aliases['myalias'] = { 'linesToAdd': [ includePath, '.L '+aliasDir+'/myaliasscript.cc+' ],
-#                       'class': 'myaliasclass',
-#                       'args': ( 'arg1', 'arg2', 'arg3' ),
-#                       'samples': [ 'sample1', 'sample2', 'samples3' ]
-#                      }
+dataDir = '/'.join([ os.path.abspath('Data'), campaign ])
+macrosPath = os.path.abspath('macros')
+
+mc   = [ x for x in samples if not samples[x]['isDATA'] ]
+data = [ x for x in samples if samples[x]['isDATA'] ]
+
+
 
