@@ -2,7 +2,7 @@
 import optparse
 import sys
 import os
-sys.path.append(os.path.abspath('../Tools/python'))
+sys.path.append(os.path.abspath('../Tools'))
 import commonTools
 import latinoTools 
 import combineTools 
