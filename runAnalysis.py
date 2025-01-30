@@ -3,6 +3,7 @@ import optparse
 import sys
 import os
 sys.path.append(os.path.abspath('../Tools'))
+sys.path.append(os.path.abspath(os.getenv('PWD')))
 import commonTools
 import latinoTools 
 import combineTools 
